@@ -69,6 +69,8 @@ def main() -> int:
     print(f"assembling {len(files)} files")
     prg = bytearray(0x20000)
     asm = pds6502.Assembler(prg, SRC, [SRC])
+    which = asm.setup_path.name if asm.setup_path else "6502 manual default"
+    print(f"byte selectors: option 0,{asm.selector_swap_default} ({which})")
     asm.prescan(files)
     asm.collect_macros(files)
     print(f"macros: {len(asm.macros)}")
