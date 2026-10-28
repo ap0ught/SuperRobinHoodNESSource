@@ -23,3 +23,7 @@ SRH has no reference cartridge in-tree, so placement is undetermined.
 - Mapper 232 (Quattro multicart), 16x16KB PRG, CHR-RAM
 - Contains 4 games, so SRH's code is a subset; direct byte-match
   against the whole PRG is unreliable for slot placement.
+
+## .nes produced
+srh-rebuilt.nes (262160 bytes, Quattro-style header, assembled PRG padded to 256KB)
+Branch-out-of-range and chr-symbol warnings remain; not a verified working ROM.
