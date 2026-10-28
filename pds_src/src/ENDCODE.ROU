@@ -28,13 +28,6 @@ irqinterupt	rti
 	BANK 12,START
 	else
 	bank 12
-wipebanks	= 0
-	do
-	org &8000
-	defs &4000,0
-	bank wipebanks
-wipebanks	= wipebanks+1
-	until wipebanks=12
 
 	endif
 	send computer1

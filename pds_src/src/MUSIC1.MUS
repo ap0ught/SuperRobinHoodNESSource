@@ -1403,6 +1403,7 @@ END_OF_CODE
 ;
 
 INDEX	dw $87d6;9
+	defb $ff,$ff,$ff,$ff,$ff,$ff,$ff,$ff,$ff
 
 
 ;start vol	0-255

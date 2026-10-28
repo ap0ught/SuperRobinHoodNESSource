@@ -38,13 +38,18 @@ The dialect, as measured from the source
 * **Numbers.** `radix 10` is in effect: bare digits are decimal, `$` is hex, `%`
   is binary, and a bare token carrying hex letters is read as hex
   (`memchk c000,b`). `"A"` is a character constant, `"MAGIC1+"` a string.
-* **Byte selectors.** `<expr` and `>expr` are the low and high byte, as
-  `option 0,0` documents. Infix `<` and `>` are comparisons, as in `if *>$7fff`.
+* **Byte selectors.** At the start of an expression, `>` is the low byte and
+  `<` is the high byte: the arrow points at the byte returned, so `>$1234` is
+  `$34` and `<$1234` is `$12` (PDS 6502 manual). The configuration system can
+  reverse this; Super Robin Hood's cartridge matches the default. Infix `<`
+  and `>` are comparisons, as in `if *>$7fff`.
 * **Directives.** `hex` (raw hex digit pairs, ignoring `radix`), `db`,
   `dw`, `dl`/`dh` (the LOW and HIGH halves of a pointer list: ONE byte each,
   not the Atari MACRO "define long" of 4 and 2 -- see `directive` and
   `src/testing/test_pointer_widths.py`), `ds n,f`, `incbin`, `include`,
-  `error`, `end`, and the no-ops `send`, `option`, `radix`.
+  `error`, `end`, and the no-ops `send`, `option`, `radix`. `cbm` has the
+  same syntax as `db`, but quoted text is Commodore 64 screen code
+  (`CBM "CAT"` is `3, 1, $14`).
 
 `if 0=1` in x7 (lines 1005-1147) was long assumed to be dead -- an obsolete
 hand-written address table, with the live branch packing the data files
@@ -116,8 +121,8 @@ FORCE_ABS = {"jmp", "jsr"}
 
 DIRECTIVES = {"if", "ifs", "else", "endif", "org", "bank", "hex", "db", "dw", "dl", "dh",
               "defb", "defw", "cbm", "list", "path", "send",
-              "ds", "defs", "do", "loop", "incbin", "include", "error", "end", "send", "option", "radix",
-              "macro", "endm", "page", "space", "equ", "=", "dc"}
+              "ds", "defs", "do", "loop", "until", "incbin", "include", "error", "end", "send", "option", "radix",
+              "macro", "endm", "page", "space", "equ", "=", "dc", "free"}
 # `set` is deliberately absent: shopdat.src defines `set equ $07`, and a keyword
 # list is what the statement scanner uses to tell a label from a directive, so
 # listing it cut `set equ $07` into a `set` directive and lost the label.
@@ -212,6 +217,21 @@ def tokenize_expr(text: str) -> list[tuple[str, str]]:
         if text[pos].isspace():
             pos += 1
             continue
+        # `&` is a hex prefix (`&8000`) and also bitwise AND (`(@1&32)`).
+        # A hex prefix follows an operator or the start of the expression;
+        # after a value it is the operator.
+        if text[pos] == "&":
+            prev_kind, prev_val = out[-1] if out else (None, None)
+            infix = prev_kind in ("name", "num", "hex", "hex2", "lbl", "bin", "str") or prev_val == ")"
+            if not infix:
+                mhex = re.match(r"[0-9A-Fa-f]+", text[pos + 1:])
+                if mhex:
+                    out.append(("hex2", "&" + mhex.group()))
+                    pos += 1 + mhex.end()
+                    continue
+            out.append(("op", "&"))
+            pos += 1
+            continue
         m = EXPR_RE.match(text, pos)
         if not m or m.end() == pos:
             raise AsmError(f"cannot lex expression {text!r} at offset {pos}")
@@ -250,15 +270,23 @@ class Expr:
         return v
 
     def compare(self):
-        """`if *>$7fff`, `if 0=1`, `if @2=st_che`.
+        """`if *>$7fff`, `if 0=1`, `if @2=st_che`, `if uuu EQU$100`.
 
         Comparisons bind looser than arithmetic and are not chained here: the
         source never chains them, and `<`/`>` are also the low/high byte
-        selectors when they start an operand.
+        selectors when they start an operand. PDS writes equality as `EQU`
+        as well as `=`.
         """
         v = self.or_expr()
-        while self.peek()[1] in ("=", "<>", "<", ">"):
-            op = self.next()[1]
+        while True:
+            kind, val = self.peek()
+            if val in ("=", "<>", "<", ">"):
+                op = val
+            elif kind == "name" and isinstance(val, str) and val.lower() == "equ":
+                op = "="
+            else:
+                break
+            self.next()
             r = self.or_expr()
             v = {"=": v == r, "<>": v != r, "<": v < r, ">": v > r}[op]
         return v
@@ -272,7 +300,8 @@ class Expr:
 
     def xor_expr(self):
         v = self.and_expr()
-        while self.peek()[1] == "^":
+        # PDS spells XOR as `~` (`(@1&64~64)`), and `^` is the same operator.
+        while self.peek()[1] in ("^", "~"):
             self.next()
             v ^= self.and_expr()
         return v
@@ -345,8 +374,10 @@ class Expr:
         if kind in ("name", "lbl"):
             return self.asm.lookup(val)
         if val in ("<", ">"):
+            # `>` points at the low byte, `<` at the high byte. See the module
+            # docstring. Infix comparisons are handled in compare(), before this.
             v = self.or_expr()
-            return (v & 0xFF) if val == "<" else ((v >> 8) & 0xFF)
+            return (v & 0xFF) if val == ">" else ((v >> 8) & 0xFF)
         raise AsmError(f"unexpected token {val!r} in expression")
 
     @staticmethod
@@ -402,12 +433,16 @@ class Line:
 # Keywords that take no operand.
 NO_OPERAND = {"else", "endif", "endm", "end", "macro", "page", "space"}
 # Keywords that take exactly one operand.
-ONE_OPERAND = {"bank", "equ", "=", "incbin", "include", "if", "do",
+ONE_OPERAND = {"bank", "=", "incbin", "include", "do", "free",
                "radix", "option", "send"}
+# Keywords whose operand is the remainder of the line. Conditions and `equ`
+# expressions contain spaces: `if showcoins = 1`, `until mwn EQU 1`,
+# `dungeonschrs equ * - mapchrsdefs`.
+REST_OF_LINE = {"if", "until", "equ"}
 # Keywords that take up to N comma-separated arguments.
 N_OPERANDS = {"org": 2, "ds": 2, "defs": 2, "ifs": 2, "load": 5, "error": 1}
 # Keywords whose operand list continues while the next token starts with a comma.
-COMMA_LIST = {"db", "dc", "dw", "dl", "dh"}
+COMMA_LIST = {"db", "dc", "dw", "dl", "dh", "defb", "defw", "cbm"}
 # Instructions with no operand form at all (`cli` never takes one), so the next
 # token after them starts the next statement.
 NO_OPERAND_INSN = {op for op, modes in OPCODES.items()
@@ -483,6 +518,17 @@ def words_of(line: str, lineno: int = 0) -> list[Word]:
     return out
 
 
+def comma_continues(words: list[Word], i: int) -> bool:
+    """True when `words[i]` is another item of a comma-separated operand.
+
+    PDS writes both `db 1,2` and `db 1, 2`. The comma sits on the previous
+    token in the second form and on the next token in the first.
+    """
+    if i <= 0 or i >= len(words):
+        return False
+    return words[i].text.startswith(",") or words[i - 1].text.endswith(",")
+
+
 def scan_statements(words: list[Word], keywords: set[str], where: str,
                     report: list[str] | None, macro_names: set[str] | None = None) -> list[Line]:
     """Cut one PDS logical line into its statements.
@@ -534,6 +580,9 @@ def scan_statements(words: list[Word], keywords: set[str], where: str,
                 continue
         if low in NO_OPERAND:
             continue
+        if low in REST_OF_LINE:
+            i = n
+            continue
         if low == "hex":
             # `hex` takes runs of hex digits and nothing else, so a bare name
             # after one is the next label rather than an operand. A macro
@@ -547,9 +596,10 @@ def scan_statements(words: list[Word], keywords: set[str], where: str,
                 i += 1
             continue
         if low in COMMA_LIST:
-            i += 1
-            while i < n and words[i].text.startswith(","):
+            if i < n:
                 i += 1
+                while comma_continues(words, i):
+                    i += 1
             continue
         if low in ONE_OPERAND:
             i += 1
@@ -562,7 +612,7 @@ def scan_statements(words: list[Word], keywords: set[str], where: str,
             limit = N_OPERANDS[low]
             taken = 0
             while i < n and taken < limit:
-                if taken and not (exact or words[i].text.startswith(",")):
+                if taken and not (exact or comma_continues(words, i)):
                     break
                 i += 1
                 taken += 1
@@ -585,13 +635,13 @@ def scan_statements(words: list[Word], keywords: set[str], where: str,
             if i < n and not is_keyword(words[i].text, keywords) \
                     and not words[i].col0:
                 i += 1
-                while i < n and words[i].text.startswith(","):
+                while comma_continues(words, i):
                     i += 1
             continue
         # An instruction: one operand, possibly glued to a following comma.
         if i < n:
             i += 1
-            while i < n and words[i].text.startswith(","):
+            while comma_continues(words, i):
                 i += 1
 
     if len(starts) == 1:
@@ -643,6 +693,10 @@ def logical_lines(text: str, where: str, keywords: set[str] | None = None,
     """
     out: list[Line] = []
     for lineno, raw in enumerate(text.split("\n"), 1):
+        # A line whose first character is `*` is a comment. PDS uses this for
+        # banner lines (`**** ... ****`) as well as `;`.
+        if raw.lstrip(" \t\r").startswith("*"):
+            continue
         if keywords is None:
             indented = raw[:1] in (" ", "\t")
             joined = " ".join(s for s in (strip_comment(x).strip()
@@ -672,13 +726,19 @@ class Fixup:
     ``offset`` is where the byte goes in the PRG image; ``after`` is the
     *logical* address the displacement is measured from, which is not the same
     space -- a bank assembled at $8000 can be addressed by the game at $A000.
+
+    ``cap`` is `(byte_list, index)` in the PDS bank capture, so the resolved
+    displacement is written into the same list `emit` appended to. The list
+    object stays valid when a later `bank` moves it into a closed segment.
     """
 
-    __slots__ = ("offset", "after", "expr", "where", "scope")
+    __slots__ = ("offset", "after", "expr", "where", "scope", "cap")
 
-    def __init__(self, offset: int, after: int, expr: str, where: str, scope: str):
+    def __init__(self, offset: int, after: int, expr: str, where: str, scope: str,
+                 cap: tuple[list, int] | None = None):
         self.offset, self.after = offset, after
         self.expr, self.where, self.scope = expr, where, scope
+        self.cap = cap
 
 
 # Tables the banks read but never define -- and *why* they are undefined.
@@ -717,6 +777,20 @@ SOURCE_GAPS = frozenset({
     "cphtab", "cpltab", "dphtab", "dpltab",
     "xphtab", "xpltab", "yphtab", "ypltab",
 })
+
+
+def c64_screen(code: int) -> int:
+    """ASCII byte to the Commodore 64 screen code PDS `cbm` stores.
+
+    The 6502 manual's example is ``CBM "CAT"`` producing ``3, 1, $14``.
+    Space through ``?`` are unchanged. ``@`` through DEL fold into the low
+    five bits, so ``A`` is 1 and ``^`` is ``$1E``.
+    """
+    if 0x20 <= code <= 0x3F:
+        return code
+    if 0x40 <= code <= 0x7F:
+        return code & 0x1F
+    return code & 0xFF
 
 
 class Assembler:
@@ -810,6 +884,13 @@ class Assembler:
         # See the `error` case in `directive`.
         self.demo_errors: tuple[str, ...] = ()
         self.demo_seen: list[tuple[str, str]] = []
+        # PDS `bank` downloads everything assembled since the previous `bank`.
+        # When capture is on, `emit` appends (physical address, byte) here and
+        # `bank` closes the segment. See run_all.
+        self.capture_banks = False
+        self.bank_segments: list[tuple[int, list[tuple[int, int]]]] = []
+        self.open_seg: list[tuple[int, int]] = []
+        self.ended = False
 
         self.cond: list[bool] = []
         self.cond_taken: list[bool] = []
@@ -1019,6 +1100,8 @@ class Assembler:
         return slot * self.SLOT + (p - win)
 
     def emit(self, byte: int):
+        if self.capture_banks:
+            self.open_seg.append((self.phys & 0xFFFF, byte & 0xFF))
         off = self.prg_offset()
         if 0 <= off < len(self.prg):
             self.prg[off] = byte & 0xFF
@@ -1060,7 +1143,13 @@ class Assembler:
             sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "tools"))
             from pds_extract import decode  # noqa: E402
             return decode(data)
-        return data.decode("latin-1")
+        # 0x01/0x02 are PDS editor block markers. 0x1A is the CP/M end-of-file
+        # byte. Neither is source. Stripping them leaves the text they bracketed,
+        # which is assembled.
+        return (data.decode("latin-1")
+                .replace("\x01", "")
+                .replace("\x02", "")
+                .replace("\x1a", ""))
 
     def snapshot(self) -> dict:
         # Everything a run mutates. Leaving the slot and the address counters out
@@ -1158,22 +1247,32 @@ class Assembler:
         prev: dict[str, int] | None = None
         for attempt in range(self.MAX_PASSES):
             self.tolerate = True
+            self.ended = False
             for path, slot in zip(paths, slots):
                 self.run_file(path, slot=slot, origin=origins.get(path.name),
                               window_slots=window_slots.get(path.name),
                               addr_ceiling=ceilings.get(path.name))
+                if self.ended:
+                    break
             current = dict(self.sym)
             if current == prev:
                 break
             prev = current
         self.tolerate = False
         # One last clean pass, with the now-known symbols, so the emitted bytes
-        # come from a run in which every reference resolved.
-        #
+        # come from a run in which every reference resolved. This is also the
+        # pass whose bytes are kept for the PDS bank download.
+        self.capture_banks = True
+        self.bank_segments = []
+        self.open_seg = []
+        self.ended = False
         for path, slot in zip(paths, slots):
             self.run_file(path, slot=slot, origin=origins.get(path.name),
                           window_slots=window_slots.get(path.name),
                           addr_ceiling=ceilings.get(path.name))
+            if self.ended:
+                break
+        self.capture_banks = False
         return self
 
     def run_file(self, path: pathlib.Path, slot: int | None = None,
@@ -1248,8 +1347,26 @@ class Assembler:
         # than one pass. Redefinition is only allowed from the second pass on,
         # so a genuine duplicate label is still caught on the first.
         prev: dict[str, int] | None = None
+        # Counters (`name = expr`) survive from earlier files, and this loop
+        # re-assembles the file until labels stop moving. Without putting those
+        # counters back, the second attempt continues from the first attempt's
+        # final value and a `varlim = varlim+1` runs twice.
+        incoming_redef = {k: self.sym[k] for k in self.redefinable if k in self.sym}
+        # A discarded attempt must not keep the bytes it downloaded. The
+        # checkpoint is the capture state on entry; each attempt rewinds to
+        # it, and the last attempt is the one that remains.
+        if self.capture_banks:
+            checkpoint_segs = self.bank_segments[:]
+            checkpoint_open = self.open_seg[:]
         for attempt in range(self.MAX_PASSES):
+            self.ended = False
+            if self.capture_banks:
+                self.bank_segments = checkpoint_segs[:]
+                self.open_seg = checkpoint_open[:]
             self.allow_redefine = attempt > 0
+            if attempt > 0:
+                for k, v in incoming_redef.items():
+                    self.sym[k] = v
             self.slot = base_slot
             self.phys, self.log, self.star = base_addr
             self.preexisting = set(self.sym)
@@ -1297,17 +1414,76 @@ class Assembler:
         raise AsmError(f"file not found: {name}")
 
     def process(self, lines: list[Line]):
-        for ln in lines:
-            if ln.op is None and ln.label is None:
-                continue
-            try:
-                self.line(ln)
-            except AsmError as e:
-                if e.where:
-                    raise
-                raise AsmError(f"{e.raw}  [{ln.raw.strip()[:60]}]", ln.where) from None
-            if ln.op == "end":
+        i = 0
+        lines = list(lines)
+        while i < len(lines):
+            if self.ended:
                 return
+            ln = lines[i]
+            if ln.op is None and ln.label is None:
+                i += 1
+                continue
+            # `do`/`loop` and `do`/`until` repeat the enclosed lines. The count
+            # is read once. A `do` inside a false conditional is skipped a line
+            # at a time, the same way the body is.
+            if (ln.op == "do" and self.defining is None and not self.collecting
+                    and self.active()):
+                body, end_ln, i = self._take_repeat(lines, i)
+                self._one_line(ln)
+                self._run_repeat(ln, body, end_ln)
+                continue
+            self._one_line(ln)
+            if ln.op == "end":
+                self.ended = True
+                return
+            i += 1
+
+    def _one_line(self, ln: Line):
+        try:
+            self.line(ln)
+        except AsmError as e:
+            if e.where:
+                raise
+            raise AsmError(f"{e.raw}  [{ln.raw.strip()[:60]}]", ln.where) from None
+
+    def _take_repeat(self, lines: list[Line], i: int) -> tuple[list[Line], Line, int]:
+        depth = 1
+        body: list[Line] = []
+        j = i + 1
+        while j < len(lines):
+            op = lines[j].op
+            if op == "do":
+                depth += 1
+                body.append(lines[j])
+            elif op in ("loop", "until"):
+                depth -= 1
+                if depth == 0:
+                    return body, lines[j], j + 1
+                body.append(lines[j])
+            else:
+                body.append(lines[j])
+            j += 1
+        raise AsmError("do without loop or until", lines[i].where)
+
+    def _run_repeat(self, do_ln: Line, body: list[Line], end_ln: Line):
+        if end_ln.op == "loop":
+            if not do_ln.operands.strip():
+                raise AsmError("do/loop needs a count", do_ln.where)
+            count = self.value(do_ln.operands)
+            if count < 0 or count > 100000:
+                raise AsmError(f"do count out of range ({count})", do_ln.where)
+            for _ in range(count):
+                self.process(body)
+                if self.ended:
+                    return
+            return
+        if end_ln.op == "until":
+            for _ in range(10000):
+                self.process(body)
+                if self.ended or self.truth(end_ln.operands):
+                    return
+            raise AsmError("until did not terminate", do_ln.where)
+        raise AsmError(f"do closed by {end_ln.op!r}", do_ln.where)
 
     def active(self) -> bool:
         return all(self.cond)
@@ -1463,8 +1639,7 @@ class Assembler:
         binding = (args + [""] * 10)[:10]
         saved_scope = self.scope
         try:
-            for body in macro.lines:
-                self.line(self.substitute(body, binding))
+            self.process([self.substitute(body, binding) for body in macro.lines])
         finally:
             self.scope = saved_scope
 
@@ -1497,7 +1672,9 @@ class Assembler:
 
     def exec_directive(self, ln: Line, operands: str):
         op = ln.op
+        screen_codes = False
         if op in ("defb", "cbm"):
+            screen_codes = op == "cbm"
             op = "db"
         elif op in ("defw",):
             op = "dw"
@@ -1530,7 +1707,18 @@ class Assembler:
         elif op == "org":
             self.do_org(ln, operands)
         elif op == "bank":
-            self.slot = self.value(operands) & 0x0F
+            # PDS downloads the code assembled since the previous BANK (or the
+            # start of the program) and then resets the location counter's
+            # output. The number is what the target's download stub switches
+            # to; a second operand is an execution address for that stub.
+            args = split_operands(operands)
+            if not args or not args[0].strip():
+                raise AsmError("bank with no operand", ln.where)
+            number = self.value(args[0])
+            if self.capture_banks:
+                self.bank_segments.append((number, self.open_seg))
+                self.open_seg = []
+            self.slot = number & 0x0F
         elif op == "hex":
             digits = "".join(operands.split())
             if len(digits) % 2:
@@ -1585,7 +1773,10 @@ class Assembler:
                 if op in ("db", "dc") and item[:1] == '"' and len(item) >= 2 \
                         and item[-1:] == '"':
                     for ch in item[1:-1]:
-                        self.emit(ord(ch) & 0xFF)
+                        byte = ord(ch) & 0xFF
+                        if screen_codes:
+                            byte = c64_screen(byte)
+                        self.emit(byte)
                     continue
                 v = self.value_or_defer(item, ln.where)
                 for k in range(base, base + width):
@@ -1613,7 +1804,7 @@ class Assembler:
                 self.demo_seen.append((msg, ln.where))
                 return
             raise AsmError(f"error directive: {msg}", ln.where)
-        elif op in ("send", "option", "radix", "page", "space", "end", "do", "loop", "list", "path"):
+        elif op in ("send", "option", "radix", "page", "space", "end", "do", "loop", "until", "list", "path", "free"):
             pass
         else:
             raise AsmError(f"unknown directive {op!r}", ln.where)
@@ -1768,8 +1959,9 @@ class Assembler:
             # against the cartridge, `X6.PDS:791 initcols` emitted `D0 F8` where
             # the release has `D0 F7`, and `X7.PDS:927`'s `bpl !a` pointed one
             # byte into `lda $2002`'s opcode instead of at its first byte.
+            cap = (self.open_seg, len(self.open_seg)) if self.capture_banks else None
             self.fixups.append(Fixup(self.prg_offset(), self.log + 1,
-                                     operand.lstrip(), ln.where, self.scope))
+                                     operand.lstrip(), ln.where, self.scope, cap))
             self.emit(0)
             return
         if mode in ("imp", "acc"):
@@ -1915,6 +2107,10 @@ class Assembler:
             # $1FFFF, and because fixups resolve in list order the last dropped
             # branch to resolve is the one that wins, so which branch corrupts
             # the vector depends on how many modules ran before it.
+            if f.cap is not None:
+                lst, idx = f.cap
+                addr, _old = lst[idx]
+                lst[idx] = (addr, signed & 0xFF)
             if not 0 <= f.offset < len(self.prg):
                 self.overflow.append(
                     (self.here.name, f.after & 0xFFFF, self.slot))
