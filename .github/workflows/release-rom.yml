@@ -29,10 +29,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout SuperRobinHoodNESSource
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Checkout pds6502 assembler
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ap0ught/pds6502
           path: _pds6502
