@@ -1,7 +1,8 @@
 """Load the shared PDS 1.26 assembler.
 
-The implementation lives in the pds6502 repository, as a sibling of this
-game or at ``$PDS6502_HOME``. This file only locates that module.
+The implementation lives in https://github.com/ap0ught/pds6502 — clone it as a
+sibling of this game (``../pds6502``) or set ``$PDS6502_HOME``. This file only
+locates that module.
 """
 from __future__ import annotations
 
@@ -22,7 +23,8 @@ def _locate() -> Path:
     if sibling.is_file():
         return sibling
     raise SystemExit(
-        "pds6502 assembler not found. Clone it next to this repo "
+        "pds6502 assembler not found. Clone "
+        "https://github.com/ap0ught/pds6502 next to this repo "
         "(../pds6502) or set PDS6502_HOME."
     )
 

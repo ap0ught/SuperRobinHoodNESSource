@@ -4,6 +4,8 @@ Working notes for Super Robin Hood NES source and the RobinEdit React port.
 
 ## Build / assembler (this repo only)
 
+Shared assembler: **[ap0ught/pds6502](https://github.com/ap0ught/pds6502)** (loaded by `asm/pds6502.py`; see root [README](../README.md)).
+
 | File | Topic |
 |------|--------|
 | [01-pds-build-attempt.md](01-pds-build-attempt.md) | PDS assembler port and first `.nes` rebuild attempt |

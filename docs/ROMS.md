@@ -9,7 +9,7 @@ RobinEdit’s copy of this note: [`docs/ROMS.md`](https://github.com/ap0ught/rob
 | Role | Path(s) in this repo | How produced |
 |------|----------------------|--------------|
 | Asia dump | `vendor/Super Robin Hood (Asia) (En) (Unl).nes` (canonical); optional root-level duplicate of the same name | Commercial **Asia / En / Unl** cartridge dump — not built here |
-| Rebuild | `srh-rebuilt.nes` (prefer [Releases](https://github.com/ap0ught/SuperRobinHoodNESSource/releases/latest)) | `python3 asm/build_srh.py` → assembles `pds_src/src/ROBIN.PRJ` with `asm/pds6502.py`, places banks, writes Asia-matching iNES header |
+| Rebuild | `srh-rebuilt.nes` (prefer [Releases](https://github.com/ap0ught/SuperRobinHoodNESSource/releases/latest)) | `python3 asm/build_srh.py` → assembles `pds_src/src/ROBIN.PRJ` via [ap0ught/pds6502](https://github.com/ap0ught/pds6502) (`asm/pds6502.py` loader), places banks, writes Asia-matching iNES header |
 
 RobinEdit local aliases (gitignored there): `public/asia.nes` ≡ Asia dump; `public/rebuilt.nes` ≡ `srh-rebuilt.nes`.
 
@@ -35,7 +35,10 @@ Same-offset compare Asia ↔ rebuild is ~**40%** (shifts from ZP vs absolute enc
 
 ## Build the rebuild
 
+Needs the shared assembler from [ap0ught/pds6502](https://github.com/ap0ught/pds6502) (clone next to this repo as `../pds6502`, or set `PDS6502_HOME`). CI does the same checkout in [`.github/workflows/release-rom.yml`](../.github/workflows/release-rom.yml).
+
 ```bash
+git clone https://github.com/ap0ught/pds6502.git ../pds6502   # once
 python3 asm/build_srh.py
 # writes srh-rebuilt.nes and prints per-bank match % vs the Asia dump if present
 ```
