@@ -27,7 +27,18 @@ CI publishes the same artifact on tag push (`v*` / `rom-v*`) or via **Actions �
 * [The rewritten code ported to cc65 assembly](https://github.com/ap0ught/SuperRobinHoodNESSource/tree/master/rewrite)
 * [RobinEdit (map/object editor for mapper-71 carts)](https://github.com/ap0ught/robinedit) — split out of `robinedit/` here; see also [`robinedit/MOVED.md`](robinedit/MOVED.md)
 * [RobinEdit journals (04–09)](journal/README.md) — port/ROM-layout notes; also in [ap0ught/robinedit `journals/`](https://github.com/ap0ught/robinedit/tree/main/journals)
+* [**ROM images** — Asia dump vs `srh-rebuilt.nes`](docs/ROMS.md) — sizes, CRC/SHA, iNES header (mapper 71), build, licensing
 * [The Super Robin Hood map consisting of all the levels](https://github.com/ap0ught/SuperRobinHoodNESSource/tree/master/docs/content/map.png)
 * [Lua scripts!](https://github.com/ap0ught/SuperRobinHoodNESSource/tree/master/docs/content/lua_scripts)
 * [A RAM Map detailing what every variable name is, where it resides in memory and - once the rewrite is finished - hopefully descriptions regarding what the variables do as well](https://github.com/ap0ught/SuperRobinHoodNESSource/tree/master/docs/ram_map.wiki)
 * [All the manuals and executables for PDS!](https://github.com/ap0ught/SuperRobinHoodNESSource/tree/master/docs/manuals)
+
+## Asia cart vs `srh-rebuilt.nes`
+
+| | Asia dump | Rebuild |
+|--|-----------|---------|
+| File | `vendor/Super Robin Hood (Asia) (En) (Unl).nes` | `srh-rebuilt.nes` (prefer [Releases](https://github.com/ap0ught/SuperRobinHoodNESSource/releases/latest)) |
+| Origin | Commercial Asia/En unlicensed cart dump | `python3 asm/build_srh.py` from `pds_src` |
+| Size / mapper | 65552 bytes, mapper **71**, 64 KiB PRG, CHR-RAM | same header shape |
+
+Fingerprints, selftest ink notes, and copyright caution: **[`docs/ROMS.md`](docs/ROMS.md)**. Remaining code differences vs the cart: [`journal/03-cart-differences.md`](journal/03-cart-differences.md).

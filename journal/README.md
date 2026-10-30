@@ -10,6 +10,8 @@ Working notes for Super Robin Hood NES source and the RobinEdit React port.
 | [02-assembler-from-magician.md](02-assembler-from-magician.md) | Dialect / bank placement changes vs Magician assembler |
 | [03-cart-differences.md](03-cart-differences.md) | Remaining differences vs the Asia cart image |
 
+ROM inventory (Asia dump + `srh-rebuilt.nes` hashes/header/build): **[`docs/ROMS.md`](../docs/ROMS.md)** (mirrored in [robinedit `docs/ROMS.md`](https://github.com/ap0ught/robinedit/blob/main/docs/ROMS.md)).
+
 ## RobinEdit / ROM layouts the editor uses
 
 Copied into standalone [ap0ught/robinedit](https://github.com/ap0ught/robinedit) as `journals/` (and mirrored under `robinedit/journals/` here):
