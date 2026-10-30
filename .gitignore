@@ -1,1 +1,12 @@
 .gd/**
+
+# Patched ROMs written by Play map
+.play/
+
+# Assembler build junk
+asm/out/
+asm/__pycache__/
+**/__pycache__/
+
+# Do not re-add retail dumps at the repo root (vendor/ may keep a local copy)
+/Super Robin Hood (Asia) (En) (Unl).nes

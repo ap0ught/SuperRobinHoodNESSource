@@ -1,0 +1,94 @@
+# Build srh-rebuilt.nes from pds_src and publish it on a GitHub Release.
+#
+# Triggers:
+#   - Push of tags matching v* or rom-v* (creates/updates that release)
+#   - workflow_dispatch with a tag name (creates the tag if missing, then releases)
+#
+# Build: python3 asm/build_srh.py with ap0ught/pds6502 via PDS6502_HOME.
+# The Asia cartridge dump is optional (match stats only) and is not used in CI.
+
+name: Release rebuilt ROM
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "rom-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. rom-v1.0.1 or v1.0.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout SuperRobinHoodNESSource
+        uses: actions/checkout@v4
+
+      - name: Checkout pds6502 assembler
+        uses: actions/checkout@v4
+        with:
+          repository: ap0ught/pds6502
+          path: _pds6502
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Assemble srh-rebuilt.nes
+        env:
+          PDS6502_HOME: ${{ github.workspace }}/_pds6502
+        run: |
+          python3 asm/build_srh.py
+          test -f srh-rebuilt.nes
+          test "$(wc -c < srh-rebuilt.nes)" -eq 65552
+          sha256sum srh-rebuilt.nes | tee srh-rebuilt.nes.sha256
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ensure tag exists (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ steps.tag.outputs.name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists"
+          else
+            git tag "${TAG}"
+            git push origin "refs/tags/${TAG}"
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: Super Robin Hood rebuilt ROM (${{ steps.tag.outputs.name }})
+          body: |
+            Rebuilt mapper-71 `srh-rebuilt.nes` assembled from `pds_src/` with
+            [ap0ught/pds6502](https://github.com/ap0ught/pds6502).
+
+            ```
+            python3 asm/build_srh.py
+            ```
+
+            SHA-256 is in `srh-rebuilt.nes.sha256`.
+          files: |
+            srh-rebuilt.nes
+            srh-rebuilt.nes.sha256
+          fail_on_unmatched_files: true
