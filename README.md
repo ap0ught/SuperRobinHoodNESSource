@@ -8,6 +8,7 @@ When opening the RAM Map be sure to view it in raw mode as it doesn't render the
 * [The official Super Robin Hood Source Code (written in PDS)](https://github.com/Vhyrro/SuperRobinHoodNESSource/tree/master/pds_src)
 * [The rewritten code ported to cc65 assembly](https://github.com/Vhyrro/SuperRobinHoodNESSource/tree/master/rewrite)
 * [RobinEdit (map/object editor for mapper-71 carts)](https://github.com/ap0ught/robinedit) — split out of `robinedit/` here; see also [`robinedit/MOVED.md`](robinedit/MOVED.md)
+* [RobinEdit journals (04–08)](journal/README.md) — port/ROM-layout notes; also in [ap0ught/robinedit `journals/`](https://github.com/ap0ught/robinedit/tree/main/journals)
 * [The Super Robin Hood map consisting of all the levels](https://github.com/Vhyrro/SuperRobinHoodNESSource/tree/master/docs/content/map.png)
 * [Lua scripts!](https://github.com/Vhyrro/SuperRobinHoodNESSource/tree/master/docs/content/lua_scripts)
 * [A RAM Map detailing what every variable name is, where it resides in memory and - once the rewrite is finished - hopefully descriptions regarding what the variables do as well](https://github.com/Vhyrro/SuperRobinHoodNESSource/tree/master/docs/ram_map.wiki)
